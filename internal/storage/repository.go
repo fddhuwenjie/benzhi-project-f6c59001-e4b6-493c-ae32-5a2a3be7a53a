@@ -176,7 +176,7 @@ func (r *FileRepository) Events(id string) ([]conservation.Event, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if cached, ok := r.eventCache[id]; ok {
-		return cached, nil
+		return cloneEvents(cached), nil
 	}
 	f, err := os.Open(r.eventPath(id))
 	if errors.Is(err, os.ErrNotExist) {
@@ -198,7 +198,27 @@ func (r *FileRepository) Events(id string) ([]conservation.Event, error) {
 		result = append(result, event)
 	}
 	r.eventCache[id] = result
-	return result, nil
+	return cloneEvents(result), nil
+}
+
+// cloneEvents returns a deep copy of the event slice so that callers cannot
+// mutate the cached canonical copy through the returned slice header or the
+// shared json.RawMessage (Details) byte slice backing arrays. The cache holds
+// the authoritative copy; every Events call hands out an independent clone.
+func cloneEvents(events []conservation.Event) []conservation.Event {
+	if events == nil {
+		return nil
+	}
+	cloned := make([]conservation.Event, len(events))
+	for i, event := range events {
+		cloned[i] = event
+		if len(event.Details) > 0 {
+			details := make([]byte, len(event.Details))
+			copy(details, event.Details)
+			cloned[i].Details = details
+		}
+	}
+	return cloned
 }
 
 func (r *FileRepository) casePath(id string) string {
