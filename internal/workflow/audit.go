@@ -5,10 +5,52 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"benzhi-project-f6c59001-e4b6-493c-ae32-5a2a3be7a53a/internal/conservation"
 )
+
+// validateEventChain checks that the persisted event log for a case forms a
+// coherent integrity chain: every event references the given case, revisions
+// advance sequentially, status transitions link end-to-end, timestamps are
+// non-decreasing, request identifiers are unique, and the final event's
+// revision matches the case snapshot revision.
+func validateEventChain(caseID string, events []conservation.Event, item *conservation.ConservationCase) error {
+	if len(events) == 0 {
+		return fmt.Errorf("事件链为空，无法校验完整性")
+	}
+	expected := int64(1)
+	last := time.Time{}
+	lastStatus := conservation.Status("")
+	requestIDs := map[string]bool{}
+	for _, event := range events {
+		switch {
+		case event.CaseID != caseID:
+			return fmt.Errorf("事件 %s 的事项标识与请求标识不一致", event.ID)
+		case event.BeforeRevision != expected-1:
+			return fmt.Errorf("事件 %s 的前置修订号 %d 与期望 %d 不连续", event.ID, event.BeforeRevision, expected-1)
+		case event.AfterRevision != expected:
+			return fmt.Errorf("事件 %s 的后置修订号 %d 与期望 %d 不连续", event.ID, event.AfterRevision, expected)
+		case !last.IsZero() && event.OccurredAt.Before(last):
+			return fmt.Errorf("事件 %s 的时间早于前一事件", event.ID)
+		case strings.TrimSpace(event.RequestID) == "":
+			return fmt.Errorf("事件 %s 的请求标识为空", event.ID)
+		case requestIDs[event.RequestID]:
+			return fmt.Errorf("事件 %s 的请求标识 %q 重复", event.ID, event.RequestID)
+		case event.FromStatus != lastStatus:
+			return fmt.Errorf("事件 %s 的起始状态与前一事件终态不一致", event.ID)
+		}
+		requestIDs[event.RequestID] = true
+		expected++
+		last = event.OccurredAt
+		lastStatus = event.ToStatus
+	}
+	if events[len(events)-1].AfterRevision != item.Revision {
+		return fmt.Errorf("末事件修订号 %d 与封存快照修订号 %d 不一致", events[len(events)-1].AfterRevision, item.Revision)
+	}
+	return nil
+}
 
 type ArchiveSummary struct {
 	CaseID          string                       `json:"case_id"`
@@ -51,6 +93,9 @@ func (s *Service) BuildAuditPackage(id string) (*AuditPackage, error) {
 	events, err := s.repo.Events(id)
 	if err != nil {
 		return nil, err
+	}
+	if err := validateEventChain(id, events, view.Case); err != nil {
+		return nil, fmt.Errorf("审计包完整性校验失败: %w", err)
 	}
 	evidence := append([]conservation.EvidenceRef(nil), view.Case.InitialEvidence...)
 	if view.Case.Assessment != nil {
