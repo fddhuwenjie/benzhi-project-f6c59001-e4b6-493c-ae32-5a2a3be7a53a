@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"benzhi-project-f6c59001-e4b6-493c-ae32-5a2a3be7a53a/internal/conservation"
@@ -16,16 +17,18 @@ import (
 type Clock func() time.Time
 
 type Service struct {
-	repo  storage.Repository
-	clock Clock
+	repo        storage.Repository
+	clock       Clock
+	replayMu    sync.RWMutex
+	replayCache map[string][]byte
 }
 
 func NewService(repo storage.Repository) *Service {
-	return &Service{repo: repo, clock: time.Now}
+	return &Service{repo: repo, clock: time.Now, replayCache: make(map[string][]byte)}
 }
 
 func NewServiceWithClock(repo storage.Repository, clock Clock) *Service {
-	return &Service{repo: repo, clock: clock}
+	return &Service{repo: repo, clock: clock, replayCache: make(map[string][]byte)}
 }
 
 func (s *Service) Repository() storage.Repository { return s.repo }
@@ -52,6 +55,18 @@ func (s *Service) replay(requestID, operation, caseID string, target any) (bool,
 	if err := validateRequest(requestID); err != nil {
 		return false, err
 	}
+	s.replayMu.RLock()
+	cached, cachedOK := s.replayCache[requestID]
+	if cachedOK {
+		cached = append([]byte(nil), cached...)
+	}
+	s.replayMu.RUnlock()
+	if cachedOK {
+		if err := json.Unmarshal(cached, target); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
 	record, err := s.repo.GetIdempotency(requestID)
 	if err != nil {
 		return false, err
@@ -65,6 +80,9 @@ func (s *Service) replay(requestID, operation, caseID string, target any) (bool,
 	if err := json.Unmarshal(record.Result, target); err != nil {
 		return false, err
 	}
+	s.replayMu.Lock()
+	s.replayCache[requestID] = append([]byte(nil), record.Result...)
+	s.replayMu.Unlock()
 	return true, nil
 }
 
@@ -73,7 +91,13 @@ func (s *Service) remember(requestID, operation, caseID string, result any) erro
 	if err != nil {
 		return err
 	}
-	return s.repo.PutIdempotency(storage.IdempotencyRecord{RequestID: requestID, Operation: operation, CaseID: caseID, Result: data, CompletedAt: s.clock().UTC()})
+	if err := s.repo.PutIdempotency(storage.IdempotencyRecord{RequestID: requestID, Operation: operation, CaseID: caseID, Result: data, CompletedAt: s.clock().UTC()}); err != nil {
+		return err
+	}
+	s.replayMu.Lock()
+	s.replayCache[requestID] = append([]byte(nil), data...)
+	s.replayMu.Unlock()
+	return nil
 }
 
 func makeEvent(item *conservation.ConservationCase, meta CommandMeta, eventType string, beforeRevision int64, from conservation.Status, details any, now time.Time) conservation.Event {
