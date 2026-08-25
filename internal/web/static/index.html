@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>古籍修复方案审议工作台</title>
+  <link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="seal" aria-hidden="true">修</span>
+      <div><strong>古籍修复方案审议工作台</strong><small>保护事项 · 专业审议 · 证据封存</small></div>
+    </div>
+    <button class="primary" id="new-case" type="button"><span aria-hidden="true">＋</span> 新建档案</button>
+  </header>
+  <div class="workspace">
+    <aside class="case-rail" aria-label="案件列表">
+      <div class="rail-tools">
+        <label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="题名、索书号、修复师"></label>
+        <select id="status-filter" aria-label="按状态筛选">
+          <option value="">全部状态</option>
+          <option value="draft">草稿</option>
+          <option value="pending_assessment">待评估</option>
+          <option value="proposal_drafting">方案编制中</option>
+          <option value="peer_review">待同行审议</option>
+          <option value="pending_trial">待小样核验</option>
+          <option value="pending_approval">待最终批准</option>
+          <option value="archived">已批准封存</option>
+        </select>
+      </div>
+      <div id="case-count" class="case-count">0 件事项</div>
+      <nav id="case-list" class="case-list" aria-live="polite"></nav>
+    </aside>
+    <main id="detail" class="detail">
+      <div class="empty-state">
+        <span class="empty-mark" aria-hidden="true">卷</span>
+        <h1>选择修复事项</h1>
+        <p>从左侧列表打开档案，或建立新的损伤记录。</p>
+      </div>
+    </main>
+    <aside id="action-panel" class="action-panel" aria-label="当前阶段操作">
+      <div class="panel-empty"><strong>当前操作</strong><p>选择事项后显示可执行操作。</p></div>
+    </aside>
+  </div>
+  <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+  <dialog id="create-dialog">
+    <form id="create-form" class="dialog-form">
+      <header><div><h2>建立损伤档案</h2><p>草稿将保留载体、损伤与图像证据元数据。</p></div><button class="icon-button" type="button" data-close aria-label="关闭">×</button></header>
+      <div class="form-grid">
+        <label>题名<input name="title" required></label>
+        <label>索书号<input name="shelf_mark" required></label>
+        <label>版本标识<input name="version_identifier" required></label>
+        <label>责任修复师<input name="responsible_conservator" required></label>
+        <label>载体材料<input name="support_material" required></label>
+        <label>证据文件名<input name="evidence_filename" required placeholder="damage-01.jpg"></label>
+        <label class="wide">载体特征<textarea name="carrier_characteristics" required></textarea></label>
+        <label class="wide">损伤部位<textarea name="damage_locations" required placeholder="每行一项"></textarea></label>
+      </div>
+      <footer><button class="secondary" type="button" data-close>取消</button><button class="primary" type="submit">保存草稿</button></footer>
+    </form>
+  </dialog>
+  <script src="/assets/app.js" defer></script>
+</body>
+</html>
+
