@@ -20,6 +20,7 @@ type FileRepository struct {
 	eventsDir   string
 	requestsDir string
 	mu          sync.RWMutex
+	eventCache  map[string][]conservation.Event
 }
 
 func NewFileRepository(root string) (*FileRepository, error) {
@@ -31,6 +32,7 @@ func NewFileRepository(root string) (*FileRepository, error) {
 		casesDir:    filepath.Join(root, "cases"),
 		eventsDir:   filepath.Join(root, "events"),
 		requestsDir: filepath.Join(root, "requests"),
+		eventCache:  make(map[string][]conservation.Event),
 	}
 	for _, dir := range []string{r.root, r.casesDir, r.eventsDir, r.requestsDir} {
 		if err := os.MkdirAll(dir, 0o750); err != nil {
@@ -98,7 +100,11 @@ func (r *FileRepository) appendEvent(event conservation.Event) error {
 	if _, err := f.Write(append(data, '\n')); err != nil {
 		return err
 	}
-	return f.Sync()
+	if err := f.Sync(); err != nil {
+		return err
+	}
+	delete(r.eventCache, event.CaseID)
+	return nil
 }
 
 func (r *FileRepository) Load(id string) (*conservation.ConservationCase, error) {
@@ -167,8 +173,11 @@ func (r *FileRepository) List(filter CaseFilter) ([]*conservation.ConservationCa
 }
 
 func (r *FileRepository) Events(id string) ([]conservation.Event, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if cached, ok := r.eventCache[id]; ok {
+		return cached, nil
+	}
 	f, err := os.Open(r.eventPath(id))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, conservation.ErrNotFound
@@ -188,6 +197,7 @@ func (r *FileRepository) Events(id string) ([]conservation.Event, error) {
 		}
 		result = append(result, event)
 	}
+	r.eventCache[id] = result
 	return result, nil
 }
 
